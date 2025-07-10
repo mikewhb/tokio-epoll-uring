@@ -498,10 +498,12 @@ impl SlotHandle {
         scopeguard::defer! {
             if op.lock().unwrap().is_none() {
                 // fast-path to avoid the try_upgrade_mut() call
+                trace!("Operation is already completed, skipping upgrade.");
                 return;
             }
             let res = slot.slots_weak.try_upgrade_mut(|inner| {
                 let Some(op) = op.lock().unwrap().take() else {
+                    trace!("Operation is None, skipping.");
                     return;
                 };
                 let storage = &mut inner.storage;
@@ -516,6 +518,7 @@ impl SlotHandle {
                         // So, move it into the Slot.
                         // `process_completion` will drop the box and return the slot
                         // once it observes the completion.
+                        trace!("Operation is still pending, moving to PendingButFutureDropped state.");
                         *slot_mut = Slot::PendingButFutureDropped {
                             _resources_owned_by_kernel: Box::new(op),
                         };
@@ -524,6 +527,7 @@ impl SlotHandle {
                         // The op completed and called the waker that would eventually cause this future to be polled
                         // and transition from Inflight to one of the Done states. But this future got dropped first.
                         // So, it's our job to drop the slot.
+                        trace!("Operation is ready, result: {}", result);
                         *slot_mut = Slot::Ready { result: *result };
                         inner.return_slot(slot.idx);
                         // SAFETY:
@@ -541,6 +545,7 @@ impl SlotHandle {
             match res {
                 Ok(()) => (),
                 Err(()) => {
+                    error!("Failed to upgrade slot, dropping operation.");
                     // SAFETY:
                     // This future has an outdated view of the system; it shut down in the meantime.
                     // Shutdown makes sure that all inflight ops complete, so, it is safe to drop the resources owned by kernel at this point.
@@ -585,6 +590,7 @@ impl SlotHandle {
                     }
                     Slot::Ready { result: res } => {
                         trace!("op is ready, returning resources to user");
+                        trace!("Slot is ready, result: {}", res);
                         let res = *res;
                         inner.return_slot(slot.idx);
                         // SAFETY: the slot is ready, so, ownership is back with userspace.
@@ -598,6 +604,7 @@ impl SlotHandle {
             });
             match try_upgrade_res {
                 Err(()) => {
+                    error!("Failed to upgrade slot, returning shutdown result.");
                     // SAFETY:
                     // This future has an outdated view of the system; it shut down in the meantime.
                     // Shutdown makes sure that all inflight ops complete, so,
