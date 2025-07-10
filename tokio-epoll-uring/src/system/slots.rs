@@ -31,7 +31,7 @@ use std::{
 };
 
 use tokio::sync::oneshot;
-use tracing::{debug, trace, error};
+use tracing::{debug, trace, error, info};
 use uring_common::io_uring;
 
 use crate::system::submission::op_fut::Error;
@@ -301,6 +301,9 @@ impl SlotsInner {
         let storage = &mut self.storage;
         let slot = &mut storage[idx];
         let slot = slot.as_mut().unwrap();
+        
+        info!("cqe.result {}", cqe.result);
+        
         match slot {
             Slot::Pending { waker } => {
                 let waker = waker.take();
