@@ -302,7 +302,7 @@ impl SlotsInner {
         let slot = &mut storage[idx];
         let slot = slot.as_mut().unwrap();
         
-        info!("cqe.result {}", cqe.result);
+        info!("cqe.result {}", cqe.result());
         
         match slot {
             Slot::Pending { waker } => {
